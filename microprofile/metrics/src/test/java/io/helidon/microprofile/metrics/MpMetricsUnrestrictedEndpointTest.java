@@ -29,6 +29,7 @@ import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -84,6 +85,7 @@ class MpMetricsUnrestrictedEndpointTest {
     }
 
     @Test
+    @Tag("micrometer")
     void includesDirectMicrometerRegistrationInSelectedOutput() {
         String name = "unrestricted.direct.micrometer";
         var nativeRegistry = Services.get(MeterRegistry.class).unwrap(io.micrometer.core.instrument.MeterRegistry.class);

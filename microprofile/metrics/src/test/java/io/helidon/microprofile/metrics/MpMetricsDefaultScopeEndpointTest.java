@@ -29,6 +29,7 @@ import jakarta.json.JsonObject;
 import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.metrics.MetricRegistry;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -51,7 +52,6 @@ class MpMetricsDefaultScopeEndpointTest {
         registry.getOrCreate(factory.counterBuilder("default.neutral")).increment(3);
         registry.getOrCreate(factory.counterBuilder("default.unknown")
                                      .origin("com.acme.ExtensionMetersProvider")).increment(5);
-        registry.unwrap(io.micrometer.core.instrument.MeterRegistry.class).counter("default.direct").increment(7);
         registry.getOrCreate(factory.counterBuilder("default.base")
                                      .origin("io.helidon.metrics.systemmeters.SystemMetersProvider")).increment(11);
         registry.getOrCreate(factory.counterBuilder("default.vendor")
@@ -61,7 +61,6 @@ class MpMetricsDefaultScopeEndpointTest {
         JsonObject aggregate = webTarget.path("metrics").request(MediaType.APPLICATION_JSON_TYPE).get(JsonObject.class);
         assertCount(aggregate, "default.neutral;mp_scope=custom_default", 3);
         assertCount(aggregate, "default.unknown;mp_scope=custom_default", 5);
-        assertCount(aggregate, "default.direct;mp_scope=custom_default", 7);
         assertCount(aggregate, "default.base;mp_scope=base", 11);
         assertCount(aggregate, "default.vendor;mp_scope=vendor", 13);
         assertCount(aggregate, "default.explicit;mp_scope=application", 17);
@@ -73,10 +72,27 @@ class MpMetricsDefaultScopeEndpointTest {
                     .get(String.class);
             assertThat(selected, containsString("default_neutral_total"));
             assertThat(selected, containsString("default_unknown_total"));
-            assertThat(selected, containsString("default_direct_total"));
             assertThat(selected, not(containsString("default_base_total")));
             assertThat(selected, not(containsString("default_vendor_total")));
             assertThat(selected, not(containsString("default_explicit_total")));
+        }
+    }
+
+    @Test
+    @Tag("micrometer")
+    void usesConfiguredDefaultForNativeMeters() {
+        Services.get(MeterRegistry.class)
+                .unwrap(io.micrometer.core.instrument.MeterRegistry.class)
+                .counter("default.direct")
+                .increment(7);
+        JsonObject aggregate = webTarget.path("metrics").request(MediaType.APPLICATION_JSON_TYPE).get(JsonObject.class);
+        assertCount(aggregate, "default.direct;mp_scope=custom_default", 7);
+        for (String mediaType : List.of(MediaType.TEXT_PLAIN, MediaTypes.APPLICATION_OPENMETRICS_TEXT.text())) {
+            String selected = webTarget.path("metrics")
+                    .queryParam("scope", "custom_default")
+                    .request(mediaType)
+                    .get(String.class);
+            assertThat(selected, containsString("default_direct_total{mp_scope=\"custom_default\"} 7.0"));
         }
     }
 

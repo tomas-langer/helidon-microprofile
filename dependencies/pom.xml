@@ -34,7 +34,7 @@
 
     <properties>
         <!-- Version of Helidon SE -->
-        <helidon.version>27.0.0-SNAPSHOT</helidon.version>
+        <helidon.version>28.0.0-SNAPSHOT</helidon.version>
         <!--
         Changing these versions requires approval for a new third party dependency!
         -->

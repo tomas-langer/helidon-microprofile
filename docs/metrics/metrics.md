@@ -29,7 +29,7 @@ Metrics is one of the Helidon observability features.
 
 ## Maven Coordinates
 
-To enable metrics, add the following dependency to your project’s `pom.xml` (see
+To enable metrics, add the following dependencies to your project’s `pom.xml` (see
 [Managing Dependencies](../dependency-management.md)).
 
 ```xml [pom.xml]
@@ -37,10 +37,18 @@ To enable metrics, add the following dependency to your project’s `pom.xml` (s
   <groupId>io.helidon.microprofile.metrics</groupId>
   <artifactId>helidon-microprofile-metrics</artifactId>
 </dependency>
+<dependency>
+  <groupId>io.helidon.metrics.providers</groupId>
+  <artifactId>helidon-metrics-providers-helidon</artifactId>
+  <scope>runtime</scope>
+</dependency>
 ```
 
-Adding this dependency packages the full-featured metrics implementation with
-your service.
+The MicroProfile metrics module and the `helidon-microprofile` bundle do not
+select a metrics provider. Each application must add the provider it wants to
+use. The example above selects Helidon's provider. To use Micrometer, replace
+`helidon-metrics-providers-helidon` with `helidon-metrics-providers-micrometer`;
+no dependency exclusions are needed. Select one provider for your application.
 
 ## Instrumenting Your Service
 
@@ -102,11 +110,19 @@ registry.
 
 ## Publishing Metrics
 
-Helidon’s Micrometer-based metrics implementation includes these ways of
-publishing metrics data to external systems:
+The Helidon provider serves Prometheus, OpenMetrics, and JSON at `/metrics`
+without an additional publisher dependency. Choose an optional dependency for
+other publishing behavior:
 
-- Prometheus/OpenMetrics
-- OTLP (OpenTelemetry Protocol)
+| Behavior | Additional dependency |
+|----------|-----------------------|
+| OTLP over HTTP/JSON with the Helidon provider | `io.helidon.metrics.publishers:helidon-metrics-publishers-otlp` |
+| Direct Micrometer integration or Micrometer publishers | `io.helidon.metrics.providers:helidon-metrics-providers-micrometer` |
+
+The native OTLP publisher requires the Helidon provider and includes it as a
+dependency. If both provider modules are present, Micrometer takes precedence.
+Native OTLP configuration uses `endpoint`; Micrometer OTLP configuration uses
+`url`.
 
 > [!NOTE]
 > The configuration of metrics publishers as described below is a [preview
@@ -115,37 +131,89 @@ publishing metrics data to external systems:
 
 You can configure publishers in the `publishers` configuration section under the
 top level `metrics` node or under `server.features.observe.observers.metrics`.
-If you do not set up publishers explicitly, Helidon uses an inferred Prometheus
-publisher for backward compatibility. See [this later section][this-later-secti]
-for details.
+Configure an `otlp` entry explicitly to enable native OTLP export; adding the
+module alone does not start exporting. The Micrometer provider uses an inferred
+Prometheus publisher when no publishers are configured. See
+[this later section][this-later-secti] for details.
+
+### Micrometer Publishing
 
 Publishers in Helidon’s Micrometer-based metrics implementation use Micrometer
-`MeterRegistry` implementations. For each enabled publisher, Helidon adds the
-corresponding meter registry to Micrometer’s global registry. This has these
-important effects:
+`MeterRegistry` implementations. Each Helidon registry owns a composite
+Micrometer registry containing one registry per enabled publisher:
 
 - Metrics which Helidon or your code registers using the Helidon metrics API are
-  registered in all active Micrometer meter registries.
-- Each Helidon meter registered has an implementation in every active Micrometer
-  meter registry.
+  registered in all active publisher registries owned by that Helidon registry.
+- Each Helidon meter has an implementation in each of those publisher registries.
 - When Helidon or your code updates a Helidon meter, Micrometer applies the
-  change to every corresponding meter from each active meter registry.
+  change to every corresponding meter in those publisher registries.
 
 As a result, configuring more than one active meter registry can affect
 performance.
 
 > [!NOTE]
-> Make sure at least one of the configured publishers is enabled. If not,
+> With Micrometer, make sure at least one configured publisher is enabled. If not,
 > Micrometer does not have any active meter registry implementations and the
 > registered metrics are no-ops. Helidon logs a warning in this case during the
 > metrics observer initialization.
 
 ## OpenTelemetry Protocol
 
-If you configure an OTLP publisher, Helidon exports metrics data periodically to
-a backend system you configure.
+Helidon provides a native OTLP publisher for the Helidon provider and a
+Micrometer-backed OTLP publisher. Both export metrics periodically to a
+configured backend.
 
-### Configuration options
+### Native OTLP Publisher
+
+Add the native publisher alongside the MicroProfile metrics and Helidon provider
+dependencies:
+
+```xml [pom.xml]
+<dependency>
+  <groupId>io.helidon.metrics.publishers</groupId>
+  <artifactId>helidon-metrics-publishers-otlp</artifactId>
+  <scope>runtime</scope>
+</dependency>
+```
+
+This publisher streams OTLP JSON using Helidon JSON Binding and requires neither
+Micrometer nor the OpenTelemetry SDK. For a local collector listening on port
+4318, the following configuration exports every 30 seconds:
+
+```yaml [application.yaml]
+metrics:
+  publishers:
+    otlp:
+      endpoint: 'http://localhost:4318/v1/metrics'
+      interval: PT30S
+      timeout: PT10S
+      service-name: greeting-service
+      resource-attributes:
+        deployment.environment.name: development
+      headers:
+        X-Application: greeting-service
+```
+
+The endpoint is the complete metrics URL; Helidon does not append `/v1/metrics`.
+Its default is `http://localhost:4318/v1/metrics`. The default interval is
+`PT60S`, and the default timeout is `PT10S`. `service-name` defaults to
+`unknown_service`; a `service.name` resource attribute overrides it. Headers
+and additional resource attributes are optional. Configure these options through
+Helidon configuration; OpenTelemetry SDK environment-variable autoconfiguration
+does not apply.
+
+Counters export cumulative sums, gauges export gauges, and timers and histograms
+export cumulative histograms. Timer values and bucket boundaries use seconds.
+The native publisher does not support OTLP/gRPC, delta temporality, or trace
+exemplars. Registry shutdown stops periodic publishing and performs a final
+export bounded by the configured timeout.
+
+The `/metrics` endpoint remains available while native OTLP publishing is enabled;
+the Helidon provider does not require a `prometheus` publisher entry.
+
+### Micrometer OTLP Publisher
+
+#### Configuration options
 
 See [Configuration options][io-helidon-metri].
 
@@ -171,7 +239,7 @@ metrics:
 
 ## Prometheus Publisher
 
-If you configure a Prometheus publisher or rely on the inferred one, Helidon can
+With the Micrometer provider, if you configure a Prometheus publisher or rely on the inferred one, Helidon can
 make the metrics data available in the Prometheus/OpenMetrics format. (To serve
 the data at the metrics endpoint in your service, your project must also depend
 on the Helidon metrics observer component.)
@@ -196,7 +264,7 @@ You can configure other publishers and still have Helidon use the default one by
 simply adding the `prometheus` publisher entry. You do not need to specify
 further settings for it.
 
-Using an OLTP publisher **and** the default Prometheus publisher:
+Using a Micrometer OTLP publisher **and** the default Prometheus publisher:
 
 ```yaml [application.yaml]
 metrics:
@@ -208,7 +276,7 @@ metrics:
 
 ## Additional Publishers
 
-You can write other publishers by following these steps:
+With the Micrometer provider, you can write other publishers by following these steps:
 
 1.  Choose one of the Micrometer `MeterRegistry` implementations for the type of
     publishing you want to support. (for example
@@ -240,8 +308,7 @@ metrics:
 
 #### Metrics Endpoint
 
-When you add the metrics dependency to your project, and if you explicitly set
-up a Prometheus publisher or use the default one, Helidon provides a built-in
+When you add the metrics dependency to your project, Helidon provides a built-in
 REST endpoint `/metrics` which responds with a report of the registered metrics
 and their values.
 
@@ -249,10 +316,15 @@ Clients can request a particular output format from the endpoint.
 
 | Format                   | Requested by                      |
 |--------------------------|-----------------------------------|
-| OpenMetrics (Prometheus) | default (`text/plain`)            |
+| Prometheus text          | default (`text/plain`)            |
+| OpenMetrics              | Header `Accept: application/openmetrics-text` |
 | JSON                     | Header `Accept: application/json` |
 
 Formats for `/metrics` output
+
+When histogram buckets are configured, the MicroProfile text format also
+includes configured quantile samples. OpenMetrics output retains the histogram
+buckets and omits those quantile samples to conform to the OpenMetrics format.
 
 <a id="scope-specific-retrieval"></a>
 

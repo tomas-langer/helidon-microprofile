@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
@@ -643,10 +644,11 @@ class Registry implements MetricRegistry {
     }
 
     private HelidonTimer createTimer(Metadata metadata, Tag... tags) {
-        return createTimer(metricsFactory.timerBuilder(metadata.getName())
-                                   .description(metadata.getDescription())
-                                   .baseUnit(sanitizeUnit(metadata.getUnit()))
-                                   .tags(validatedTags(tags)));
+        var builder = metricsFactory.timerBuilder(metadata.getName())
+                .description(metadata.getDescription())
+                .tags(validatedTags(tags));
+        Optional.ofNullable(sanitizeUnit(metadata.getUnit())).ifPresent(builder::baseUnit);
+        return createTimer(builder);
     }
 
     private HelidonTimer createTimer(io.helidon.metrics.api.Timer.Builder tBuilder) {

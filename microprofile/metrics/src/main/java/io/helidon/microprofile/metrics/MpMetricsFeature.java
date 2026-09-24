@@ -35,6 +35,7 @@ import io.helidon.http.media.json.JsonSupport;
 import io.helidon.json.JsonArray;
 import io.helidon.json.JsonObject;
 import io.helidon.json.JsonValue;
+import io.helidon.metrics.api.FormatterContext;
 import io.helidon.metrics.api.MeterRegistry;
 import io.helidon.metrics.api.MeterRegistryFormatter;
 import io.helidon.metrics.api.MetricsConfig;
@@ -230,12 +231,15 @@ final class MpMetricsFeature {
     private MeterRegistryFormatter chooseFormatter(MediaType mediaType,
                                                     Map<String, Collection<String>> tagSelection,
                                                     Iterable<String> nameSelection) {
+        FormatterContext context = FormatterContext.builder()
+                .mediaType(mediaType)
+                .metricsConfig(metricsConfig)
+                .tagSelections(tagSelection)
+                .nameSelection(nameSelection)
+                .includeHistogramQuantiles(matches(mediaType, MediaTypes.TEXT_PLAIN))
+                .build();
         Optional<MeterRegistryFormatter> formatter = formatterProviders.stream()
-                .map(provider -> provider.formatter(mediaType,
-                                                    metricsConfig,
-                                                    meterRegistry,
-                                                    tagSelection,
-                                                    nameSelection))
+                .map(provider -> provider.formatter(context, meterRegistry))
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .findFirst();
@@ -498,14 +502,15 @@ final class MpMetricsFeature {
     }
 
     private boolean enabled() {
-        return metricsObserverConfig.enabled()
-                && metricsObserverConfig.metricsConfig().enabled()
-                && formatterProviders.stream()
-                .map(provider -> provider.formatter(MediaTypes.TEXT_PLAIN,
-                                                    metricsConfig,
-                                                    meterRegistry,
-                                                    Map.of(),
-                                                    List.of()))
+        if (!metricsObserverConfig.enabled() || !metricsObserverConfig.metricsConfig().enabled()) {
+            return false;
+        }
+        FormatterContext context = FormatterContext.builder()
+                .mediaType(MediaTypes.TEXT_PLAIN)
+                .metricsConfig(metricsConfig)
+                .build();
+        return formatterProviders.stream()
+                .map(provider -> provider.formatter(context, meterRegistry))
                 .anyMatch(Optional::isPresent);
     }
 

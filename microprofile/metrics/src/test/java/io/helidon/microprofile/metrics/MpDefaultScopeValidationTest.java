@@ -27,6 +27,7 @@ import io.helidon.service.registry.ServiceRegistryConfig;
 import io.helidon.service.registry.ServiceRegistryManager;
 
 import org.eclipse.microprofile.metrics.MetricRegistry;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -56,6 +57,7 @@ class MpDefaultScopeValidationTest {
     }
 
     @Test
+    @Tag("micrometer")
     void rejectsInvalidDefaultScopeBeforeConfiguringNativeMeters() {
         for (String defaultScope : INVALID_SCOPES) {
             withMetricsFactory(Map.of(DEFAULT_SCOPE_CONFIG_KEY, defaultScope), factory -> {
@@ -74,16 +76,31 @@ class MpDefaultScopeValidationTest {
     }
 
     @Test
+    void acceptsValidDefaultScopesForNeutralMeters() {
+        for (String defaultScope : List.of("application", "vendor", "base", "custom_default", "_Custom123")) {
+            withMetricsFactory(Map.of(DEFAULT_SCOPE_CONFIG_KEY, defaultScope),
+                               factory -> assertDefaultScope(factory, defaultScope, false));
+        }
+    }
+
+    @Test
+    @Tag("micrometer")
     void acceptsValidDefaultScopesForNeutralAndNativeMeters() {
         for (String defaultScope : List.of("application", "vendor", "base", "custom_default", "_Custom123")) {
             withMetricsFactory(Map.of(DEFAULT_SCOPE_CONFIG_KEY, defaultScope),
-                               factory -> assertDefaultScope(factory, defaultScope));
+                               factory -> assertDefaultScope(factory, defaultScope, true));
         }
     }
 
     @Test
     void usesApplicationScopeWhenDefaultIsAbsent() {
-        withMetricsFactory(Map.of(), factory -> assertDefaultScope(factory, MetricRegistry.APPLICATION_SCOPE));
+        withMetricsFactory(Map.of(), factory -> assertDefaultScope(factory, MetricRegistry.APPLICATION_SCOPE, false));
+    }
+
+    @Test
+    @Tag("micrometer")
+    void usesApplicationScopeForNativeMetersWhenDefaultIsAbsent() {
+        withMetricsFactory(Map.of(), factory -> assertDefaultScope(factory, MetricRegistry.APPLICATION_SCOPE, true));
     }
 
     @Test
@@ -130,18 +147,20 @@ class MpDefaultScopeValidationTest {
         }
     }
 
-    private static void assertDefaultScope(MetricsFactory factory, String expectedScope) {
+    private static void assertDefaultScope(MetricsFactory factory, String expectedScope, boolean checkNativeMeters) {
         var builder = factory.counterBuilder("valid.default");
         new MpMeterBuilderCustomizer(() -> factory).customize(builder);
         assertThat("Neutral meter default scope", builder.tags().get(MpScope.TAG_NAME), is(expectedScope));
 
-        MeterRegistry registry = factory.createMeterRegistry(factory.metricsConfig());
-        try {
-            MpMicrometerSupport.configure(registry, factory.metricsConfig());
-            var counter = registry.unwrap(io.micrometer.core.instrument.MeterRegistry.class).counter("native.default");
-            assertThat("Native meter default scope", counter.getId().getTag(MpScope.TAG_NAME), is(expectedScope));
-        } finally {
-            registry.close();
+        if (checkNativeMeters) {
+            MeterRegistry registry = factory.createMeterRegistry(factory.metricsConfig());
+            try {
+                MpMicrometerSupport.configure(registry, factory.metricsConfig());
+                var counter = registry.unwrap(io.micrometer.core.instrument.MeterRegistry.class).counter("native.default");
+                assertThat("Native meter default scope", counter.getId().getTag(MpScope.TAG_NAME), is(expectedScope));
+            } finally {
+                registry.close();
+            }
         }
     }
 }

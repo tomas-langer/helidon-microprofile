@@ -18,6 +18,7 @@ package io.helidon.microprofile.metrics;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
@@ -56,6 +57,10 @@ final class HelidonTimer extends MetricImpl<io.helidon.metrics.api.Timer> implem
                                String scope,
                                Metadata metadata,
                                Tag... tags) {
+        var builder = metricsFactory.timerBuilder(metadata.getName())
+                .description(metadata.getDescription())
+                .tags(allTags(metricsFactory, tags));
+        Optional.ofNullable(sanitizeUnit(metadata.getUnit())).ifPresent(builder::baseUnit);
         return create(meterRegistry,
                       metricsFactory,
                       scope,
@@ -63,11 +68,7 @@ final class HelidonTimer extends MetricImpl<io.helidon.metrics.api.Timer> implem
                       MpScope.getOrCreate(meterRegistry,
                                           metricsFactory,
                                           scope,
-                                          DistributionCustomizations.apply(
-                                                  metricsFactory.timerBuilder(metadata.getName())
-                                                          .description(metadata.getDescription())
-                                                          .baseUnit(sanitizeUnit(metadata.getUnit()))
-                                                          .tags(allTags(metricsFactory, tags)))));
+                                          DistributionCustomizations.apply(builder)));
     }
 
     static HelidonTimer create(MeterRegistry meterRegistry,

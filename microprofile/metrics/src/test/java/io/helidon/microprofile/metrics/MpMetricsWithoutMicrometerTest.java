@@ -23,7 +23,6 @@ import io.helidon.service.registry.ServiceRegistryManager;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -38,7 +37,9 @@ class MpMetricsWithoutMicrometerTest {
             MetricsConfig metricsConfig = meterRegistry.metricsFactory().metricsConfig();
             boolean configuredBeforeCallback = GlobalServiceRegistry.configured();
             registryFactoryManager.onCreate(meterRegistry, metricsConfig);
-            assertThat(meterRegistry.meters(), empty());
+            var counter = meterRegistry.getOrCreate(meterRegistry.metricsFactory().counterBuilder("without.micrometer"));
+            counter.increment(7);
+            assertThat("The default provider records metrics without Micrometer", counter.count(), is(7L));
             assertThat("The optional integration leaves global registry state unchanged",
                        GlobalServiceRegistry.configured(),
                        is(configuredBeforeCallback));

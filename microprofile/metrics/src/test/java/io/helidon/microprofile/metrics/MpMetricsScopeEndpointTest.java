@@ -33,6 +33,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -227,6 +228,7 @@ class MpMetricsScopeEndpointTest {
     }
 
     @Test
+    @Tag("micrometer")
     void appliesScopeExclusionToDirectMicrometerMeters() {
         String name = "direct.hidden";
         Services.get(MeterRegistry.class)

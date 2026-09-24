@@ -21,9 +21,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import io.helidon.common.media.type.MediaTypes;
 import io.helidon.common.testing.junit5.OptionalMatcher;
+import io.helidon.metrics.api.FormatterContext;
 import io.helidon.metrics.api.MeterRegistry;
-import io.helidon.metrics.providers.micrometer.MicrometerPrometheusFormatter;
+import io.helidon.metrics.spi.MeterRegistryFormatterProvider;
 import io.helidon.service.registry.Services;
 
 import org.eclipse.microprofile.metrics.Counter;
@@ -144,8 +146,16 @@ public class MetricsTest extends MetricsBaseTest {
         bean.setValue(expectedValue);
 
         Gauge<Integer> gauge = getMetric(bean, GaugedBean.LOCAL_INJECTABLE_GAUGE_NAME);
-        MicrometerPrometheusFormatter formatter = MicrometerPrometheusFormatter.builder(Services.get(MeterRegistry.class))
+        MeterRegistry registry = Services.get(MeterRegistry.class);
+        FormatterContext context = FormatterContext.builder()
+                .mediaType(MediaTypes.TEXT_PLAIN)
+                .metricsConfig(registry.metricsFactory().metricsConfig())
                 .build();
+        var formatter = Services.all(MeterRegistryFormatterProvider.class).stream()
+                .map(provider -> provider.formatter(context, registry))
+                .flatMap(Optional::stream)
+                .findFirst()
+                .orElseThrow();
         Optional<Object> outputOpt = formatter.format();
 
         assertThat("Output", outputOpt, OptionalMatcher.optionalPresent());
@@ -153,7 +163,7 @@ public class MetricsTest extends MetricsBaseTest {
 
         String promData = (String) outputOpt.get();
 
-        // The @Gauge overrides the default units. Plus, the Prometheus output from Micrometer now includes the mp_scope tag and
+        // The @Gauge overrides the default units. The Prometheus output includes the mp_scope tag and
         // the value formatted as a double (that's Prometheus exposition format standard).
         assertThat(promData, containsString("# TYPE gaugeForInjectionTest_minutes gauge"));
         assertThat(promData, containsString("# HELP gaugeForInjectionTest_minutes"));
